@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wall Dashboard</string>
+    <string name="admin_label">Wall Dashboard – tryb kiosku</string>
+    <string name="admin_desc">Blokada kiosku, wyłączanie ekranu i brak ekranu blokady na panelu.</string>
+</resources>

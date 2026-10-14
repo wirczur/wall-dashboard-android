@@ -17,6 +17,13 @@ Wymaga add-onu **Wall Dashboard 0.22.0** lub nowszego.
 Bez Android Studio: wrzuć katalog do prywatnego repozytorium GitHub – workflow `.github/workflows/build.yml`
 zbuduje APK (Actions → Build APK → Artifacts).
 
+## Podpis aplikacji
+
+Wszystkie wersje są podpisane tym samym kluczem z `signing/` (repozytorium jest prywatne), dlatego aktualizacja instaluje się
+na wierzch poprzedniej (`adb install -r …`). Wersje 0.1.0 i 0.1.1 miały losowy klucz – przed pierwszą instalacją 0.1.2 odinstaluj
+starą: `adb uninstall pl.walldashboard.app` (jeśli aplikacja jest właścicielem urządzenia, najpierw
+`adb shell dpm remove-active-admin pl.walldashboard.app/.AdminReceiver`).
+
 ## 2. Instalacja na panelu
 
 - Skopiuj APK i zainstaluj (tak jak instalowałeś Fully), albo z komputera: `adb install -r app-debug.apk`.

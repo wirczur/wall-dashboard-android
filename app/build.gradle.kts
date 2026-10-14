@@ -13,8 +13,8 @@ android {
         applicationId = "pl.walldashboard.app"
         minSdk = 29          // Android 10+ (Grenton S6PE: Android 11)
         targetSdk = 30
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
     }
 
     // one fixed key for every build (Android only installs an update signed with the same key)

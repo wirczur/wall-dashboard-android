@@ -2,6 +2,15 @@ package pl.walldashboard.app
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.Typeface
+import android.util.TypedValue
+import android.view.Gravity
+import android.widget.LinearLayout
+import android.widget.TextView
+import org.json.JSONArray
+import java.text.SimpleDateFormat
+import java.util.Locale
+import kotlin.random.Random
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -21,12 +30,32 @@ import java.util.Calendar
  */
 class ScreenManager(private val a: Activity, root: FrameLayout) {
     private data class Win(val from: Int, val to: Int, val days: Set<Int>?)
-    private data class Cfg(val mode: String = "saver", val idleMin: Int = 0, val hours: List<Win> = emptyList(), val brightness: Int? = null, val dim: Int = 3)
+    private data class Clock(val night: Boolean = false, val idle: Boolean = false, val date: Boolean = false, val brightness: Int = 8)
+    private data class Cfg(val mode: String = "saver", val idleMin: Int = 0, val hours: List<Win> = emptyList(), val brightness: Int? = null, val dim: Int = 3, val clock: Clock = Clock())
 
-    private val overlay = View(a).apply {
+    private val overlay = FrameLayout(a).apply {
         setBackgroundColor(Color.BLACK)
         visibility = View.GONE
         isClickable = true
+    }
+    // ---- clock on the black screen (night windows / idle), values pushed by the dashboard
+    private val timeView = TextView(a).apply { setTextColor(Color.argb(215, 255, 255, 255)); typeface = Typeface.create("sans-serif-thin", Typeface.NORMAL); gravity = Gravity.CENTER; includeFontPadding = false }
+    private val dateView = TextView(a).apply { setTextColor(Color.argb(150, 255, 255, 255)); gravity = Gravity.CENTER }
+    private val infoView = TextView(a).apply { setTextColor(Color.argb(160, 255, 255, 255)); gravity = Gravity.CENTER; setLineSpacing(0f, 1.25f) }
+    private val warnView = TextView(a).apply { setTextColor(Color.argb(200, 255, 170, 90)); gravity = Gravity.CENTER }
+    private val clockBox = LinearLayout(a).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        addView(timeView); addView(dateView); addView(infoView); addView(warnView)
+        visibility = View.GONE
+    }
+    private var darkReason = "idle"
+    private var clockOn = false
+    private val timeFmt = SimpleDateFormat("HH:mm", Locale("pl", "PL"))
+    private val dateFmt = SimpleDateFormat("EEEE, d MMMM", Locale("pl", "PL"))
+    private var lastMove = 0L
+    private val clockTick = object : Runnable {
+        override fun run() { if (clockOn) { drawClock(); h.postDelayed(this, 15_000) } }
     }
     private val h = Handler(Looper.getMainLooper())
     private var cfg = Cfg()
@@ -44,10 +73,54 @@ class ScreenManager(private val a: Activity, root: FrameLayout) {
 
     init {
         root.addView(overlay, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        overlay.addView(clockBox, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+    }
+
+    /** [{"icon":"🌡","text":"6,4 °C","warn":false}] from the dashboard (window.wallApp.setSaverInfo) */
+    fun setInfo(json: String) {
+        try {
+            val arr = JSONArray(json)
+            val normal = mutableListOf<String>(); val warn = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val t = (o.optString("icon") + " " + o.optString("text")).trim()
+                if (o.optBoolean("warn")) warn.add(t) else normal.add(t)
+            }
+            infoView.text = normal.joinToString("     ")
+            infoView.visibility = if (normal.isEmpty()) View.GONE else View.VISIBLE
+            warnView.text = warn.joinToString("     ")
+            warnView.visibility = if (warn.isEmpty()) View.GONE else View.VISIBLE
+        } catch (e: Exception) { Log.w(TAG, "zegar – dane: ${e.message}") }
+    }
+
+    private fun drawClock() {
+        val now = java.util.Date()
+        val m = Math.min(overlay.width, overlay.height).takeIf { it > 0 } ?: Math.min(a.resources.displayMetrics.widthPixels, a.resources.displayMetrics.heightPixels)
+        timeView.setTextSize(TypedValue.COMPLEX_UNIT_PX, m * 0.27f)
+        dateView.setTextSize(TypedValue.COMPLEX_UNIT_PX, m * 0.05f)
+        infoView.setTextSize(TypedValue.COMPLEX_UNIT_PX, m * 0.045f)
+        warnView.setTextSize(TypedValue.COMPLEX_UNIT_PX, m * 0.045f)
+        timeView.text = timeFmt.format(now)
+        dateView.text = dateFmt.format(now)
+        dateView.visibility = if (cfg.clock.date) View.VISIBLE else View.GONE
+        // move a little every minute so nothing burns into the panel
+        if (SystemClock.elapsedRealtime() - lastMove > 60_000) {
+            lastMove = SystemClock.elapsedRealtime()
+            val dx = overlay.width * 0.10f; val dy = overlay.height * 0.10f
+            clockBox.translationX = Random.nextFloat() * 2 * dx - dx
+            clockBox.translationY = Random.nextFloat() * 2 * dy - dy
+        }
+    }
+
+    private fun showClock(on: Boolean) {
+        clockOn = on
+        clockBox.visibility = if (on) View.VISIBLE else View.GONE
+        h.removeCallbacks(clockTick)
+        if (on) { lastMove = 0; h.post(clockTick) }
     }
 
     fun start() { h.removeCallbacks(tick); h.post(tick) }
-    fun release() { h.removeCallbacks(tick); releaseWakeLock() }
+    fun release() { h.removeCallbacks(tick); h.removeCallbacks(clockTick); releaseWakeLock() }
 
     /** {"mode":"saver|dim|off","idle":10,"hours":[{"from":"23:00","to":"06:30","days":[1,2]}],"brightness":60,"dimBrightness":3} */
     fun configure(json: String) {
@@ -69,7 +142,8 @@ class ScreenManager(private val a: Activity, root: FrameLayout) {
                     idleMin = o.optInt("idle", 0),
                     hours = wins,
                     brightness = if (o.has("brightness") && !o.isNull("brightness")) o.optInt("brightness") else null,
-                    dim = if (o.has("dimBrightness") && !o.isNull("dimBrightness")) o.optInt("dimBrightness") else 3
+                    dim = if (o.has("dimBrightness") && !o.isNull("dimBrightness")) o.optInt("dimBrightness") else 3,
+                    clock = o.optJSONObject("clock")?.let { c -> Clock(c.optBoolean("night"), c.optBoolean("idle"), c.optBoolean("date"), c.optInt("brightness", 8).coerceIn(1, 60)) } ?: Clock()
                 )
             }
         } catch (e: Exception) { Log.w(TAG, "ustawienia ekranu: ${e.message}"); Cfg() }
@@ -101,7 +175,7 @@ class ScreenManager(private val a: Activity, root: FrameLayout) {
     }
 
     /** HA / admin: "saver" or "off" right now */
-    fun forceDark(mode: String) { forced = mode; setDark(mode) }
+    fun forceDark(mode: String) { forced = mode; darkReason = "idle"; setDark(mode) }
 
     fun setBrightness(pct: Int) { userBrightness = pct.coerceIn(1, 100); if (!dark) applyBrightness() }
 
@@ -113,7 +187,9 @@ class ScreenManager(private val a: Activity, root: FrameLayout) {
         val hold = (if (cfg.idleMin > 0) cfg.idleMin else 1) * 60_000L
         val winDark = inWindow() && idle > hold
         val want = idleDark || winDark
-        if (want && !dark) setDark(cfg.mode)
+        val reason = if (winDark) "night" else "idle"
+        if (want && dark && reason != darkReason) { darkReason = reason; setDark(cfg.mode) } // e.g. idle → night: maybe the clock now
+        if (want && !dark) { darkReason = reason; setDark(cfg.mode) }
         else if (!want && dark) setAwake()
     }
 
@@ -126,8 +202,14 @@ class ScreenManager(private val a: Activity, root: FrameLayout) {
                 window(0.01f)
                 if (!Kiosk.lockNow(a)) Log.i(TAG, "wyłączenie ekranu wymaga trybu właściciela urządzenia – czarny ekran zamiast tego")
             }
-            else -> { overlay.visibility = View.VISIBLE; window(0.01f) }
+            else -> {
+                overlay.visibility = View.VISIBLE
+                val clock = (darkReason == "night" && cfg.clock.night) || (darkReason == "idle" && cfg.clock.idle)
+                showClock(clock)
+                window(if (clock) cfg.clock.brightness / 100f else 0.01f)
+            }
         }
+        if (mode != "saver") showClock(false)
         // keep the window "on" so the dashboard (WebSocket) stays alive; the OS screen timeout must not lock it
         a.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
@@ -135,6 +217,7 @@ class ScreenManager(private val a: Activity, root: FrameLayout) {
     @Suppress("DEPRECATION") // SCREEN_BRIGHT_WAKE_LOCK + ACQUIRE_CAUSES_WAKEUP: still the way to light the display from an app
     private fun setAwake() {
         dark = false
+        showClock(false)
         overlay.visibility = View.GONE
         applyBrightness()
         if (!isInteractive()) {

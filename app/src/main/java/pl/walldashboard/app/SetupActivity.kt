@@ -21,6 +21,8 @@ import java.util.concurrent.Executors
  * confirm it in Home Assistant (Wall Dashboard → Tablety → parowanie). No camera / QR needed.
  */
 class SetupActivity : Activity() {
+    companion object { const val EXTRA_REASON = "reason" }
+
     private lateinit var prefs: Prefs
     private lateinit var addr: EditText
     private lateinit var status: TextView
@@ -35,9 +37,11 @@ class SetupActivity : Activity() {
         prefs = Prefs(this)
         val col = Ui.page(this)
         col.addView(Ui.text(this, "Wall Dashboard", 24f, true))
-        col.addView(Ui.text(this, "Adres add-onu w Home Assistant (port kiosku). Wystarczy IP – aplikacja sama sprawdzi HTTPS i HTTP, domyślny port 8100.", 14f, color = "#A7B5A9"))
+        intent.getStringExtra(EXTRA_REASON)?.let { col.addView(Ui.text(this, it, 15f, true, "#FFC870")) }
+        col.addView(Ui.text(this, "Adres add-onu w Home Assistant (port kiosku, domyślnie 8100), np. https://192.168.1.10:8100", 14f, color = "#A7B5A9"))
+        col.addView(Ui.text(this, "Ważne: użyj adresu https://. Mikrofon (interkom) działa tylko przez HTTPS – w add-onie włącz opcję „ssl” (Konfiguracja). Adres zmienisz później tylko przez ponowne parowanie (ustawienia: przytrzymaj lewy górny róg 3 s).", 13f, color = "#FFC870"))
         addr = EditText(this).apply {
-            setText(prefs.base.ifEmpty { "192.168.5.4:8100" })
+            setText(prefs.base.ifEmpty { "https://" })
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setTextColor(Color.WHITE)
             setSingleLine()
@@ -63,7 +67,7 @@ class SetupActivity : Activity() {
 
     private fun connect() {
         val list = candidates(addr.text.toString())
-        if (addr.text.isBlank()) return
+        if (addr.text.isBlank() || addr.text.toString().trim().matches(Regex("^https?://?$"))) { status.text = "Wpisz adres add-onu, np. https://192.168.1.10:8100"; return }
         h.removeCallbacksAndMessages(null)
         codeView.visibility = View.GONE
         status.text = "Łączenie…"
@@ -82,7 +86,8 @@ class SetupActivity : Activity() {
                             val c = o.getString("code")
                             codeView.text = "${c.substring(0, 3)} ${c.substring(3)}"
                             codeView.visibility = View.VISIBLE
-                            status.text = "Połączono z $b\n\nW Home Assistant otwórz Wall Dashboard → Tablety i wpisz ten kod w „Parowanie”. Kod jest ważny 15 minut."
+                            status.text = "Połączono z $b\n\nW Home Assistant otwórz Wall Dashboard → Tablety i wpisz ten kod w „Parowanie”. Kod jest ważny 15 minut." +
+                                (if (b.startsWith("http://")) "\n\n⚠ Połączenie przez HTTP: interkom (mikrofon) nie będzie działał. Włącz „ssl” w add-onie i połącz ponownie adresem https://." else "")
                             poll()
                         }
                         return@execute

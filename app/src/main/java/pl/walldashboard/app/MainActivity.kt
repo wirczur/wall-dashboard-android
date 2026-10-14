@@ -32,8 +32,10 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.TextView
 import org.json.JSONObject
+import java.util.concurrent.Executors
 
 /** The kiosk: the add-on dashboard in a full-screen WebView + native screen / sound handling. */
 class MainActivity : Activity() {
@@ -42,7 +44,9 @@ class MainActivity : Activity() {
     lateinit var sound: SoundPlayer
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
-    private var errorView: TextView? = null
+    private var errorView: LinearLayout? = null
+    private var errorText: TextView? = null
+    private val io = Executors.newSingleThreadExecutor()
     private var loadFailed = false
     private var pendingPermission: PermissionRequest? = null
     private val h = Handler(Looper.getMainLooper())
@@ -77,6 +81,27 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
         }
         web.loadUrl(prefs.pageUrl())
+        checkKey()
+    }
+
+    /**
+     * The tablet was deleted in the add-on or got a new key: go back to pairing instead of showing
+     * "Nieprawidłowy klucz" forever. Network errors are ignored here (the error screen handles them).
+     */
+    private fun checkKey() {
+        if (!prefs.paired) return
+        io.execute {
+            val code = try { Net.get(prefs, "${prefs.base}/api/kiosk?k=${prefs.key}").code } catch (_: Exception) { -1 }
+            if (code == 401 || code == 404) runOnUiThread { repair("Ten panel został usunięty w add-onie albo dostał nowy klucz. Sparuj go ponownie.") }
+        }
+    }
+
+    fun repair(reason: String) {
+        prefs.key = ""
+        Kiosk.leave(this)
+        startActivity(Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_REASON, reason)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+        finish()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -116,7 +141,7 @@ class MainActivity : Activity() {
 
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) { loadFailed = false }
 
-            override fun onPageFinished(view: WebView, url: String?) { if (!loadFailed) hideError() }
+            override fun onPageFinished(view: WebView, url: String?) { if (!loadFailed) { hideError(); checkKey() } }
 
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if (!request.isForMainFrame) return
@@ -173,18 +198,27 @@ class MainActivity : Activity() {
         if (::web.isInitialized) web.loadUrl(prefs.pageUrl())
     }
 
+    /** connection / certificate problem: message + buttons (no hidden gesture needed to get out) */
     private fun showError(text: String) {
-        val v = errorView ?: TextView(this).apply {
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.BLACK)
+        val v = errorView ?: LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setBackgroundColor(Color.BLACK)
             setPadding(40, 40, 40, 40)
-            setOnClickListener { reloadDashboard() }
+            isClickable = true
+            val t = TextView(this@MainActivity).apply {
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+            }
+            errorText = t
+            addView(t)
+            addView(Ui.button(this@MainActivity, "Ponów teraz", primary = true) { reloadDashboard() })
+            addView(Ui.button(this@MainActivity, "Ustawienia / sparuj ponownie") { startActivity(Intent(this@MainActivity, SettingsActivity::class.java)) })
             root.addView(this, 1, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             errorView = this
         }
-        v.text = text
+        errorText?.text = text
         v.visibility = View.VISIBLE
     }
 
@@ -239,6 +273,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         h.removeCallbacksAndMessages(null)
+        io.shutdownNow()
         if (::screen.isInitialized) screen.release()
         if (::sound.isInitialized) sound.release()
         if (::web.isInitialized) { root.removeView(web); web.destroy() }

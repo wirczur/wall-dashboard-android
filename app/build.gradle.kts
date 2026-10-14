@@ -11,8 +11,8 @@ android {
         applicationId = "pl.walldashboard.app"
         minSdk = 29          // Android 10+ (Grenton S6PE: Android 11)
         targetSdk = 30
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
     }
 
     buildTypes {

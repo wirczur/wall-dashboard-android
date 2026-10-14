@@ -18,7 +18,14 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
       - name: Build
-        run: chmod +x gradlew && ./gradlew --no-daemon --stacktrace assembleRelease
+        shell: bash
+        run: chmod +x gradlew && ./gradlew --no-daemon assembleRelease 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+      # errors as annotations (readable without downloading the log)
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          { grep -E '^e: |error:|What went wrong' -A12 build.log || tail -40 build.log; } | head -60 | sed 's/%/%25/g' | while IFS= read -r l; do echo "::error::$l"; done
       - uses: actions/upload-artifact@v4
         with:
           name: WallDashboard-apk

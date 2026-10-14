@@ -9,7 +9,7 @@ class Prefs(ctx: Context) {
     private fun str(k: String) = p.getString(k, "") ?: ""
     private fun put(k: String, v: String) { p.edit().putString(k, v).apply() }
 
-    /** e.g. https://192.168.5.4:8100 (no trailing slash) */
+    /** e.g. https://192.168.1.10:8100 (no trailing slash) */
     var base: String
         get() = str("base")
         set(v) = put("base", v.trimEnd('/'))

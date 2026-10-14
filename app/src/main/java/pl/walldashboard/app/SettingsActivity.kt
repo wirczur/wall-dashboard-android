@@ -56,7 +56,7 @@ class SettingsActivity : Activity() {
         packageManager.getLaunchIntentForPackage("de.ozerov.fully")?.let { fully ->
             col.addView(Ui.button(this, "Otwórz Fully Kiosk") { leaveTo(fully) })
         }
-        col.addView(Ui.button(this, "Sparuj ponownie (inny tablet / adres)") {
+        col.addView(Ui.button(this, "Sparuj ponownie / zmień adres add-onu") {
             AlertDialog.Builder(this)
                 .setMessage("Panel zapomni klucz tabletu i pokaże nowy kod parowania.")
                 .setPositiveButton("Sparuj ponownie") { _, _ ->

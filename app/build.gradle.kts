@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,7 +18,7 @@ android {
     }
 
     // one fixed key for every build (Android only installs an update signed with the same key)
-    val signProps = java.util.Properties().apply {
+    val signProps = Properties().apply {
         val f = rootProject.file("signing/signing.properties")
         if (f.exists()) f.inputStream().use { load(it) }
     }

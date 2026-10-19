@@ -42,4 +42,6 @@ class AppBridge(private val m: MainActivity) {
     @JavascriptInterface fun setBrightness(pct: Int) = ui { m.screen.setBrightness(pct) }
     @JavascriptInterface fun version(): String = BuildConfig.VERSION_NAME
     @JavascriptInterface fun setSaverInfo(json: String) = ui { m.screen.setInfo(json) }
+    /** SIP call started / ended in the dashboard: speaker + communication mode */
+    @JavascriptInterface fun callAudio(on: Boolean) = ui { m.sound.callAudio(on) }
 }

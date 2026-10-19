@@ -2,7 +2,9 @@ package pl.walldashboard.app
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
@@ -92,6 +94,33 @@ class SoundPlayer(private val ctx: Context, private val prefs: Prefs) {
             val max = audio.getStreamMaxVolume(stream)
             audio.setStreamVolume(stream, Math.round(level.coerceIn(0, 100) / 100f * max), 0)
         } catch (e: Exception) { Log.w(TAG, "głośność: ${e.message}") }
+    }
+
+    private var callOn = false
+    private var savedMode = AudioManager.MODE_NORMAL
+
+    /** SIP call in the WebView: communication mode with the sound on the built-in speaker
+     *  (otherwise some panels route the call to a missing earpiece – very quiet); back to normal afterwards. */
+    fun callAudio(on: Boolean) {
+        if (on == callOn) return
+        callOn = on
+        try {
+            if (on) {
+                savedMode = audio.mode
+                audio.mode = AudioManager.MODE_IN_COMMUNICATION
+                if (Build.VERSION.SDK_INT >= 31) {
+                    audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                        ?.let { audio.setCommunicationDevice(it) }
+                } else {
+                    @Suppress("DEPRECATION")
+                    audio.isSpeakerphoneOn = true
+                }
+            } else {
+                if (Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
+                else { @Suppress("DEPRECATION") audio.isSpeakerphoneOn = false }
+                audio.mode = savedMode
+            }
+        } catch (e: Exception) { Log.w(TAG, "audio rozmowy: ${e.message}") }
     }
 
     fun getVolume(stream: Int): Int = try {

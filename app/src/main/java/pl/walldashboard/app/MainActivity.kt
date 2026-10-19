@@ -55,6 +55,8 @@ class MainActivity : Activity() {
     private var cornerX = 0f
     private var cornerY = 0f
 
+    private var cpuLock: android.os.PowerManager.WakeLock? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
@@ -71,6 +73,11 @@ class MainActivity : Activity() {
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         sound = SoundPlayer(this, prefs)
+        // wall panel on mains power: the CPU never sleeps, so a doorbell (SIP / WebSocket) is handled even with the screen off
+        try {
+            cpuLock = getSystemService(android.os.PowerManager::class.java)
+                .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "walldash:cpu").apply { setReferenceCounted(false); acquire() }
+        } catch (e: Exception) { android.util.Log.w("WallDashboard", "wake lock: ${e.message}") }
         screen = ScreenManager(this, root)   // its black overlay sits above the WebView
         setContentView(root)
 
@@ -107,6 +114,8 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
         WebView.setWebContentsDebuggingEnabled(true) // chrome://inspect from a PC over ADB
+        // the dashboard keeps its priority with the screen off / covered: the SIP phone and the WebSocket answer at once
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         web.setBackgroundColor(Color.BLACK)
         with(web.settings) {
             javaScriptEnabled = true
@@ -272,6 +281,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        try { cpuLock?.let { if (it.isHeld) it.release() } } catch (_: Exception) { }
+        if (::sound.isInitialized) sound.callAudio(false)
         h.removeCallbacksAndMessages(null)
         io.shutdownNow()
         if (::screen.isInitialized) screen.release()
